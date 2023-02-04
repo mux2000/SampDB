@@ -786,3 +786,107 @@ func TestReassign(t *testing.T) {
 	fmt.Printf("Test 'Reassign' complete.\n")
 }
 
+func TestNotification(t *testing.T) {
+
+	fmt.Printf("Starting test 'Notification'\n")
+
+	setupTest(t)
+
+	// Add three computers, assigned to the same person
+	for i := 0; i < 3; i ++ {
+		resp := addComputerReq(t,  Computer{
+			        fmt.Sprintf("0%d:2%d:4%d:6%d:8%d:a%d",i,i,i,i,i,i),
+				fmt.Sprintf("TestComputer%d", i),
+				fmt.Sprintf("172.1.0.%d", i),
+				"mmu",
+				"",
+			})
+
+	        if resp != http.StatusCreated {
+		        handleError(t, resp, "addComputer")
+		}
+	}
+
+	// Loooking for the warning from SampDB and the DummyListener
+	expectedSampDB := `Starting server on port 55555...
+Warning: Employee [mmu] has been assigned 3 computers!
+`
+
+	expectedDummyListener := `Starting server on port 8080...
+DummyListener WARNING [mmu]: : Over-assignement warning: Employee mmu is now assigned 3 computers.
+`
+
+	if outSampDBBuf.String() != expectedSampDB {
+		t.Errorf("Expected SampDB output:\n%q\nBut got: %s",
+				expectedSampDB, outSampDBBuf.String())
+	}
+	if string(outDummyListenerBuf.Bytes()) != expectedDummyListener {
+		t.Errorf("Expected dummyListener output:\n%q\nBut got: %s",
+			expectedDummyListener, outSampDBBuf.String())
+	}
+
+	// Reset output buffers
+	outSampDBBuf.Reset()
+	outDummyListenerBuf.Reset()
+
+	// Adding three non-assigned computers
+	for i := 3; i < 6; i ++ {
+		resp := addComputerReq(t,  Computer{
+			        fmt.Sprintf("0%d:2%d:4%d:6%d:8%d:a%d",i,i,i,i,i,i),
+				fmt.Sprintf("TestComputer%d", i),
+				fmt.Sprintf("172.1.0.%d", i),
+				"",
+				"",
+			})
+
+	        if resp != http.StatusCreated {
+		        handleError(t, resp, "addComputer")
+		}
+	}
+
+	// Assigning computers to the same user
+	resp := assignComputerByReq(t, "MAC", "03:23:43:63:83:a3", "ima")
+	if resp != http.StatusOK {
+		handleError(t, resp, "assignComputerByMAC")
+	}
+	resp = assignComputerByReq(t, "Name", "TestComputer4", "ima")
+	if resp != http.StatusOK {
+		handleError(t, resp, "assignComputerByName")
+	}
+	resp = assignComputerByReq(t, "IP", "172.1.0.5", "ima")
+	if resp != http.StatusOK {
+		handleError(t, resp, "assignComputerByIP")
+	}
+
+	// Loooking for the warnings from SampDB and the DummyListener
+	expectedSampDB = `Starting server on port 55555...
+Warning: Employee [mmu] has been assigned 3 computers!
+Warning: Employee [ima] has been assigned 3 computers!
+`
+
+	expectedDummyListener = `Starting server on port 8080...
+DummyListener WARNING [mmu]: : Over-assignement warning: Employee mmu is now assigned 3 computers.
+DummyListener WARNING [ima]: : Over-assignement warning: Employee ima is now assigned 3 computers.
+`
+
+
+	if outSampDBBuf.String() != expectedSampDB {
+		t.Errorf("Expected SampDB output:\n%q\nBut got: %s",
+				expectedSampDB, outSampDBBuf.String())
+	}
+	if outDummyListenerBuf.String() != expectedDummyListener {
+		t.Errorf("Expected dummyListener output:\n%q\nBut got: %s",
+			expectedDummyListener, outDummyListenerBuf.String())
+	}
+
+	for i := 0; i < 6; i ++ {
+		resp = delComputerByReq(t, "Name", fmt.Sprintf("TestComputer%d", i))
+		if resp != http.StatusOK {
+			handleError(t, resp, "deleteComputerByMAC")
+		}
+	}
+
+	teardownTest(t)
+
+	fmt.Printf("Test 'Notification' complete.\n")
+}
