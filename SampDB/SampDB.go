@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"bytes"
+	"os"
 )
 
 // Data is the structure that holds the data to be written or read
@@ -20,7 +22,63 @@ type Assignment struct {
 	Assignee	string `json:"assignee"`
 }
 
-var dataStore []Computer;
+type Notification struct {
+        Level           string `json:"level"`
+        Employee        string `json:"employeeAbbreviation"`
+        Message         string `json:"message"`
+}
+
+var dataStore []Computer
+
+func notify(emp string, numAssigned int) int {
+
+	fmt.Printf("Warning: Employee [%s] has been assigned %d computers!\n", emp, numAssigned)
+
+	var n = Notification {
+		"Warning",
+		emp,
+		fmt.Sprintf("Over-assignement warning: Employee %s is now assigned %d computers.", emp, numAssigned),
+	}
+
+	jsonData, err := json.Marshal(n)
+        if err != nil {
+		fmt.Fprintf(os.Stderr, "Notification service: Error marshalling JSON object.")
+                return -1
+	}
+
+	const listenerURL = "http://localhost:8080/api/notify"
+	resp, err := http.Post(listenerURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Notification service: Error sending object (is the listener running?\n")
+		return -1
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode
+}
+
+
+
+func checkEmployee (emp string) int {
+	count := 0
+	for _, c := range (dataStore) {
+		if c.Assignee == emp {
+			count ++
+		}
+	}
+
+	if count > 2 {
+		resp := notify(emp, count)
+		if resp < 0 {
+			return resp
+		} else if resp != http.StatusCreated {
+			return -1
+		} else {
+			return 0
+		}
+	}
+	return 0
+}
 
 func addComputer(w http.ResponseWriter, r *http.Request) {
 	var c Computer
@@ -43,7 +101,12 @@ func addComputer(w http.ResponseWriter, r *http.Request) {
 	}
 	dataStore = append(dataStore, c)
 
-	// TODO: Add admin notification check here
+	if c.Assignee != "" {
+		if checkEmployee(c.Assignee) < 0 {
+			http.Error(w, "Error reporting over-assignement.", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -168,12 +231,15 @@ func assignComputerByMAC(w http.ResponseWriter, r *http.Request) {
 	for n, c := range(dataStore) {
 		if c.MAC == a.Key {
 			dataStore[n].Assignee = a.Assignee
-			w.WriteHeader(http.StatusOK)
+			if checkEmployee(a.Assignee) < 0 {
+				fmt.Printf("Error reporting over-assignement.")
+				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
 			return
 		}
 	}
-
-	// TODO: Add admin notification check here
 
 	http.Error(w, "Key not found", http.StatusNotFound)
 }
@@ -204,12 +270,15 @@ func assignComputerByName(w http.ResponseWriter, r *http.Request) {
 	for n, c := range(dataStore) {
 		if c.Name == a.Key {
 			dataStore[n].Assignee = a.Assignee
-			w.WriteHeader(http.StatusOK)
+			if checkEmployee(a.Assignee) < 0 {
+				fmt.Printf("Error reporting over-assignement.")
+				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
 			return
 		}
 	}
-
-	// TODO: Add admin notification check here
 
 	http.Error(w, "Key not found", http.StatusNotFound)
 }
@@ -240,12 +309,15 @@ func assignComputerByIP(w http.ResponseWriter, r *http.Request) {
 	for n, c := range(dataStore) {
 		if c.IP == a.Key {
 			dataStore[n].Assignee = a.Assignee
-			w.WriteHeader(http.StatusOK)
+			if checkEmployee(a.Assignee) < 0 {
+				fmt.Printf("Error reporting over-assignement.")
+				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
 			return
 		}
 	}
-
-	// TODO: Add admin notification check here
 
 	http.Error(w, "Key not found", http.StatusNotFound)
 }

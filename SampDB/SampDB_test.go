@@ -42,13 +42,16 @@ func handleError(t *testing.T, err int, req string) {
 }
 
 var outSampDBBuf bytes.Buffer
+var outDummyListenerBuf bytes.Buffer
 var SampDBBuilt = false
-var SampDB *exec.Cmd
+var DummyListenerBuilt = false
+var SampDB, DummyListener *exec.Cmd
 
 func init () {
 
 	// Kill servers if they're already running.
 	exec.Command("killall SampDB").Output()
+	exec.Command("killall DummyListener").Output()
 }
 
 func setupTest (t *testing.T) {
@@ -94,6 +97,52 @@ func setupTest (t *testing.T) {
 	}
 	fmt.Printf(outSampDBBuf.String())
 
+	err = os.Chdir("../DummyListener")
+	if err != nil {
+		t.Fatalf("Error changing to DummyListener folder. Is this executed in the right folder?")
+	}
+
+	if !DummyListenerBuilt {
+		// Build DummyListener if it isn't already built
+		buildCmd := exec.Command("go", "build")
+		err = buildCmd.Run()
+		if err != nil {
+			t.Fatalf("Error building DummyListener: %s", err.Error())
+			return
+		}
+		DummyListenerBuilt = true
+	}
+
+	// Run DummyListener in the background
+	outDummyListenerBuf.Reset()
+	DummyListener = exec.Command("./DummyListener")
+        DummyListener.Stdout = &outDummyListenerBuf
+	err = DummyListener.Start()
+	if err != nil {
+		t.Fatalf("Error starting program: %s", err.Error())
+		return
+	}
+
+	// Verify server is up and running
+	timeout = 10
+	startLine = "Starting server on port 8080...\n"
+	for timeout > 0 {
+		if outDummyListenerBuf.String() == startLine {
+			break
+		}
+		time.Sleep(time.Second)
+		timeout --
+		if timeout == 0 {
+			t.Fatalf("Error starting SampDB - timeout reached.")
+		}
+	}
+	fmt.Printf(outDummyListenerBuf.String())
+
+	err = os.Chdir("../SampDB")
+	if err != nil {
+		t.Fatalf("Error changing to SampDB folder. Is this executed in the right folder?")
+	}
+
 	fmt.Printf("Setup complete.\n")
 }
 
@@ -108,6 +157,15 @@ func teardownTest (t *testing.T) {
 	}
 	SampDB.Wait()
 	fmt.Printf("SampDB process terminated.\n")
+
+	// Kill DummyListener
+	err = DummyListener.Process.Kill()
+	if err != nil {
+		t.Fatalf("Error killing DummyListener: %s", err.Error())
+		return
+	}
+	DummyListener.Wait()
+	fmt.Printf("DummyListener process terminated.\n")
 
 	fmt.Printf("Teardown complete.\n")
 }
@@ -331,7 +389,8 @@ func TestDeleteAllComputers(t *testing.T) {
 	resp, cl = getComputersReq(t)
 	if resp == http.StatusOK {
 		t.Errorf("Unexpected response %d for getComputers (expected StatusNotFound).", resp)
-        }
+	}
+}
 
 	teardownTest(t)
 
