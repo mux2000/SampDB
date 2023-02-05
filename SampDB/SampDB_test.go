@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+	"bufio"
+)
 
 const (
 	errMarshalling int = -1
@@ -22,6 +24,7 @@ const (
 )
 
 const baseURL = "http://localhost:55555"
+const testfile = "only-for-tests"
 
 func handleError(t *testing.T, err int, req string) {
 	if err == errMarshalling {
@@ -52,13 +55,17 @@ func init () {
 	// Kill servers if they're already running.
 	exec.Command("killall SampDB").Output()
 	exec.Command("killall DummyListener").Output()
+
+	// Start both non-volatile storage files fresh
+	os.Remove(testfile + ".json")
+	os.Remove(testfile + ".sqlite")
 }
 
-func setupTest (t *testing.T) {
+func setupTest (t *testing.T, storagetype string) {
 
 	var err error
 
-	fmt.Printf("Setting up test...\n")
+	fmt.Printf("Setting up test... [using %s storage]\n", storagetype)
 
 	// Build SampDB if it isn't already built
 	if !SampDBBuilt {
@@ -73,7 +80,8 @@ func setupTest (t *testing.T) {
 
 	// Run SampDB in the background
 	outSampDBBuf.Reset()
-	SampDB = exec.Command("./SampDB")
+	filename := testfile + "." + storagetype
+	SampDB = exec.Command("./SampDB", "--file", filename, "--storage-type", storagetype)
         SampDB.Stdout = &outSampDBBuf
 	SampDB.Stderr = os.Stderr
 	err = SampDB.Start()
@@ -337,11 +345,31 @@ func delComputerByReq(t *testing.T, keyname, key string) int {
 	return resp.StatusCode
 }
 
-func TestDeleteAllComputers(t *testing.T) {
+func TestDeleteAllComputersVolatile (t *testing.T) {
+	fmt.Printf("Starting test TestDeleteAllComputersVolatile.\n")
+	setupTest(t, "volatile")
+	subTestDeleteAllComputers(t)
+	teardownTest(t)
+	fmt.Printf("Test TestDeleteAllComputersVolatile completed.\n");
+}
 
-	fmt.Printf("Starting test 'DeleteAllComputers.\n")
+func TestDeleteAllComputersJSON (t *testing.T) {
+	fmt.Printf("Starting test TestDeleteAllComputersJSON.\n")
+	setupTest(t, "json")
+	subTestDeleteAllComputers(t)
+	teardownTest(t)
+	fmt.Printf("Test TestDeleteAllComputersJSON completed.\n");
+}
 
-	setupTest(t)
+func TestDeleteAllComputersSQL (t *testing.T) {
+	fmt.Printf("Starting test TestDeleteAllComputersSQL.\n")
+	setupTest(t, "sqlite")
+	subTestDeleteAllComputers(t)
+	teardownTest(t)
+	fmt.Printf("Test TestDeleteAllComputersSQL completed.\n");
+}
+
+func subTestDeleteAllComputers(t *testing.T) {
 
 	for i := 0; i <= 9; i++ {
 		c := Computer {
@@ -392,17 +420,31 @@ func TestDeleteAllComputers(t *testing.T) {
 	}
 }
 
+func TestAddReadRemoveMinimalVolatile (t *testing.T) {
+	fmt.Printf("Starting test TestAddReadRemoveMinimalVolatile.\n")
+	setupTest(t, "volatile")
+	subTestAddReadRemoveMinimal(t)
 	teardownTest(t)
-
-	fmt.Printf("Test 'DeleteAllComputers' completed.\n");
+	fmt.Printf("Test TestAddReadRemoveMinimalVolatile completed.\n");
 }
 
+func TestAddReadRemoveMinimalsJSON (t *testing.T) {
+	fmt.Printf("Starting test TestAddReadRemoveMinimalJSON.\n")
+	setupTest(t, "json")
+	subTestAddReadRemoveMinimal(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAddReadRemoveMinimalJSON completed.\n");
+}
 
-func TestAddReadRemoveMinimal(t *testing.T) {
+func TestAddReadRemoveMinimalSQL (t *testing.T) {
+	fmt.Printf("Starting test TestAddReadRemoveMinimalSQL.\n")
+	setupTest(t, "sqlite")
+	subTestAddReadRemoveMinimal(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAddReadRemoveMinimalSQL completed.\n");
+}
 
-	fmt.Printf("Starting test 'AddReadRemoveMininal'\n")
-
-	setupTest(t)
+func subTestAddReadRemoveMinimal(t *testing.T) {
 
 	var c = Computer {
 		MAC: "01:23:45:67:89:ab",
@@ -448,17 +490,33 @@ func TestAddReadRemoveMinimal(t *testing.T) {
 	if resp != http.StatusOK {
 		handleError(t, resp, "deleteComputerByMAC")
 	}
-
-	teardownTest(t)
-
-	fmt.Printf("Test 'AddReadRemoveMininal' complete.\n")
 }
 
-func TestAddMalformed(t *testing.T) {
+func TestAddMalformedVolatile (t *testing.T) {
+	fmt.Printf("Starting test TestAddMalformedVolatile.\n")
+	setupTest(t, "volatile")
+	subTestAddMalformed(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAddMalformedlVolatile completed.\n");
+}
 
-	fmt.Printf("Starting test 'Malformed'.\n")
+func TestAddMalformedJSON (t *testing.T) {
+	fmt.Printf("Starting test TestAddMalformedJSON.\n")
+	setupTest(t, "json")
+	subTestAddMalformed(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAddMalformedJSON completed.\n");
+}
 
-	setupTest(t)
+func TestAddMAlformedSQL (t *testing.T) {
+	fmt.Printf("Starting test TestAddMalformedSQL.\n")
+	setupTest(t, "sqlite")
+	subTestAddMalformed(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAddMalfomedSQL completed.\n");
+}
+
+func subTestAddMalformed(t *testing.T) {
 
 	var malformed = Computer {
 		MAC: "01:23:45:67:89:ab",
@@ -545,17 +603,33 @@ func TestAddMalformed(t *testing.T) {
 	if resp != http.StatusOK {
 		handleError(t, resp, "deleteComputerByName")
 	}
-
-	teardownTest(t)
-
-	fmt.Printf("Test 'Malformed' complete.\n");
 }
 
-func TestAssignUnassign(t *testing.T) {
+func TestAssignUnassignVolatile (t *testing.T) {
+	fmt.Printf("Starting test TestAssignUnassignVolatile.\n")
+	setupTest(t, "volatile")
+	subTestAssignUnassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAssignUnassignVolatile completed.\n");
+}
 
-	fmt.Printf("Starting test 'AssignUnassign'.\n")
+func TestAssignUnassignJSON (t *testing.T) {
+	fmt.Printf("Starting test TestAssignUnassignJSON.\n")
+	setupTest(t, "json")
+	subTestAssignUnassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAssignUnassignJSON completed.\n");
+}
 
-	setupTest(t)
+func TestAssignUnassignSQL (t *testing.T) {
+	fmt.Printf("Starting test TestAssignUnassignSQL.\n")
+	setupTest(t, "sqlite")
+	subTestAssignUnassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestAssignUnassignSQL completed.\n");
+}
+
+func subTestAssignUnassign(t *testing.T) {
 
 	var cl []Computer
 	var c1 = Computer {
@@ -677,17 +751,33 @@ func TestAssignUnassign(t *testing.T) {
 	if resp != http.StatusOK {
 		handleError(t, resp, "deleteComputerByIP")
 	}
-
-	teardownTest(t)
-
-	fmt.Printf("Test 'AssignUnassign' complete.\n");
 }
 
-func TestReassign(t *testing.T) {
+func TestReassignVolatile (t *testing.T) {
+	fmt.Printf("Starting test TestReassignVolatile.\n")
+	setupTest(t, "volatile")
+	subTestReassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestReassignVolatile completed.\n");
+}
 
-	fmt.Printf("Starting test 'Reassign'.\n");
+func TestReassignJSON (t *testing.T) {
+	fmt.Printf("Starting test TestReassignJSON.\n")
+	setupTest(t, "json")
+	subTestReassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestReassignJSON completed.\n");
+}
 
-	setupTest(t)
+func TestReassignSQL (t *testing.T) {
+	fmt.Printf("Starting test TestReassignSQL.\n")
+	setupTest(t, "sqlite")
+	subTestReassign(t)
+	teardownTest(t)
+	fmt.Printf("Test TestReassignSQL completed.\n");
+}
+
+func subTestReassign(t *testing.T) {
 
 	var cl []Computer
 	var c1 = Computer {
@@ -780,17 +870,13 @@ func TestReassign(t *testing.T) {
 	if resp != http.StatusOK {
 		handleError(t, resp, "deleteComputerByIP")
 	}
-
-	teardownTest(t)
-
-	fmt.Printf("Test 'Reassign' complete.\n")
 }
 
 func TestNotification(t *testing.T) {
 
 	fmt.Printf("Starting test 'Notification'\n")
 
-	setupTest(t)
+	setupTest(t, "volatile")
 
 	// Add three computers, assigned to the same person
 	for i := 0; i < 3; i ++ {
@@ -889,4 +975,187 @@ DummyListener WARNING [ima]: : Over-assignement warning: Employee ima is now ass
 	teardownTest(t)
 
 	fmt.Printf("Test 'Notification' complete.\n")
+}
+
+func TestJSONStorage(t *testing.T) {
+
+	fmt.Printf("Starting test TestJSONStorage.\n")
+
+	var got string
+
+	var filename = testfile + ".json"
+
+	// Create a fresh JSON file
+	os.Remove(filename)
+	setupTest(t, "json")
+
+	// Write one computer to file.
+	resp := addComputerReq(t, Computer {
+		MAC: "ba:ad:ba:ad:ba:ad",
+		Name: "UniqueText",
+		IP: "8.8.8.8",
+		Assignee: "foo",
+		Description: "More unique text",
+	})
+	if resp != http.StatusCreated {
+		handleError(t, resp, "addCompuer")
+	}
+
+	// Read file
+	file, err := os.Open(filename)
+	if err != nil {
+		t.Errorf("Error opening file %s", testfile)
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		got += scanner.Text()
+	}
+	file.Close()
+
+	expected := `[{"mac":"ba:ad:ba:ad:ba:ad","name":"UniqueText","ip":"8.8.8.8","assignee":"foo","description":"More unique text"}]`
+
+	if got != expected {
+		t.Errorf("Unexpected contents of JSON test file:\nExpected: <%s>\nGot: <%s>\n", expected, got)
+	}
+
+	// Destroy volatile storage
+	teardownTest(t)
+
+	// Reopen test file
+	setupTest(t, "json")
+
+	// Write one more computer to file.
+	resp = addComputerReq(t, Computer {
+		MAC: "de:ad:de:ad:de:ad",
+		Name: "UniqueText2",
+		IP: "9.9.9.9",
+		Assignee: "bar",
+		Description: "Even more unique text",
+	})
+	if resp != http.StatusCreated {
+		handleError(t, resp, "addCompuer")
+	}
+
+	// Read file
+	got = ""
+	file, err = os.Open(filename)
+	if err != nil {
+		t.Errorf("Error opening file %s", testfile)
+	}
+	scanner = bufio.NewScanner(file)
+	for scanner.Scan() {
+		got += scanner.Text()
+	}
+	file.Close()
+
+	expected = `[{"mac":"ba:ad:ba:ad:ba:ad","name":"UniqueText","ip":"8.8.8.8","assignee":"foo","description":"More unique text"},{"mac":"de:ad:de:ad:de:ad","name":"UniqueText2","ip":"9.9.9.9","assignee":"bar","description":"Even more unique text"}]`
+
+	if got != expected {
+		t.Errorf("Unexpected contents of JSON test file:\nExpected: <%s>\nGot: <%s>\n", expected, got)
+	}
+
+	teardownTest(t)
+
+	fmt.Printf("Test TestJSONStorage complete.\n")
+}
+
+func TestSQLStorage(t *testing.T) {
+
+	fmt.Printf("Starting test TestSQLStorage.\n")
+
+	var filename = testfile + ".sqlite"
+
+	// Create a fresh JSON file
+	os.Remove(filename)
+	setupTest(t, "sqlite")
+
+	// Write one computer to file.
+	resp := addComputerReq(t, Computer {
+		MAC: "ca:fe:ca:fe:ca:fe",
+		Name: "UniqueText",
+		IP: "8.8.8.8",
+		Assignee: "foo",
+		Description: "More unique text",
+	})
+	if resp != http.StatusCreated {
+		handleError(t, resp, "addCompuer")
+	}
+
+	// Read file
+	got, err := ioutil.ReadFile(filename)
+	if err != nil {
+		t.Errorf("Error reading output file %s: %s", filename, err.Error())
+		return
+	}
+
+	// Read expected data
+	expectedFile := "expected1.sqlite"
+	expected, err := ioutil.ReadFile(expectedFile)
+	if err != nil {
+		t.Errorf("Error reading expected output file %s: %s", expectedFile, err.Error())
+		return
+	}
+
+	// Compare
+	if len(got) != len(expected) {
+		t.Errorf("Output SQL file is not as expected (different size)")
+		return
+	}
+
+	for i, b := range got {
+		if b != expected[i] {
+			t.Errorf("Output SQL file is not as expected (different content)")
+			return
+		}
+	}
+
+	// Destroy volatile storage
+	teardownTest(t)
+
+	// Reopen test file
+	setupTest(t, "sqlite")
+
+	// Write one more computer to file.
+	resp  = addComputerReq(t, Computer {
+		MAC: "de:ad:de:ad:de:ad",
+		Name: "UniqueText2",
+		IP: "9.9.9.9",
+		Assignee: "bar",
+		Description: "Even more unique text",
+	})
+	if resp != http.StatusCreated {
+		handleError(t, resp, "addCompuer")
+	}
+
+	// Read file
+	got, err = ioutil.ReadFile(filename)
+	if err != nil {
+		t.Errorf("Error reading output file %s: %s", filename, err.Error())
+		return
+	}
+
+	// Read expected data
+	expectedFile = "expected2.sqlite"
+	expected, err = ioutil.ReadFile(expectedFile)
+	if err != nil {
+		t.Errorf("Error reading expected output file %s: %s", expectedFile, err.Error())
+		return
+	}
+
+	// Compare
+	if len(got) != len(expected) {
+		t.Errorf("Output SQL file is not as expected (different size)")
+		return
+	}
+
+	for i, b := range got {
+		if b != expected[i] {
+			fmt.Println("Output SQL file is not as expected (different content)")
+			return
+		}
+	}
+
+	teardownTest(t)
+
+	fmt.Printf("Test TestSQLStorage complete.\n")
 }

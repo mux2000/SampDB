@@ -28,8 +28,6 @@ type Notification struct {
         Message         string `json:"message"`
 }
 
-var dataStore []Computer
-
 func notify(emp string, numAssigned int) int {
 
 	fmt.Printf("Warning: Employee [%s] has been assigned %d computers!\n", emp, numAssigned)
@@ -57,21 +55,24 @@ func notify(emp string, numAssigned int) int {
 	return resp.StatusCode
 }
 
-
-
 func checkEmployee (emp string) int {
-	count := 0
-	for _, c := range (dataStore) {
-		if c.Assignee == emp {
-			count ++
-		}
+
+	dataAccess.Lock()
+	err, cl := dataStore.ReadAll(KeyAssignee, emp)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		return 0
+	} else if err != nil {
+		return http.StatusInternalServerError
 	}
 
-	if count > 2 {
-		resp := notify(emp, count)
+	if len(cl) > 2 {
+		resp := notify(emp, len(cl))
 		if resp < 0 {
 			return resp
 		} else if resp != http.StatusCreated {
+			fmt.Printf("Notification returned %d\n", resp)
 			return -1
 		} else {
 			return 0
@@ -99,7 +100,15 @@ func addComputer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "'assignee' field is restricted to 3-letter employee codes.", http.StatusBadRequest)
 		return // TODO: Reconsider limitation for future-proofing
 	}
-	dataStore = append(dataStore, c)
+
+	dataAccess.Lock()
+	err = dataStore.Add(c)
+	dataAccess.Unlock()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	if c.Assignee != "" {
 		if checkEmployee(c.Assignee) < 0 {
@@ -117,13 +126,19 @@ func getComputerByMAC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("mac")
-	for _, c := range(dataStore) {
-		if c.MAC == key {
-			json.NewEncoder(w).Encode(c)
-			return
-		}
+
+	dataAccess.Lock()
+	err, c := dataStore.Read(KeyMAC, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(*c)
 }
 
 func getComputerByName(w http.ResponseWriter, r *http.Request) {
@@ -132,13 +147,20 @@ func getComputerByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("name")
-	for _, c := range(dataStore) {
-		if c.Name == key {
-			json.NewEncoder(w).Encode(c)
-			return
-		}
+
+	dataAccess.Lock()
+	err, c := dataStore.Read(KeyName, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	json.NewEncoder(w).Encode(*c)
 }
 
 func getComputerByIP(w http.ResponseWriter, r *http.Request) {
@@ -147,13 +169,20 @@ func getComputerByIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("ip")
-	for _, c := range(dataStore) {
-		if c.IP == key {
-			json.NewEncoder(w).Encode(c)
-			return
-		}
+
+	dataAccess.Lock()
+	err, c := dataStore.Read(KeyIP, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	json.NewEncoder(w).Encode(*c)
 }
 
 func getComputersByAssignee(w http.ResponseWriter, r *http.Request) {
@@ -163,15 +192,19 @@ func getComputersByAssignee(w http.ResponseWriter, r *http.Request) {
 	}
 	var cl []Computer
 	key := r.URL.Query().Get("assignee")
-	for _, c := range(dataStore) {
-		if c.Assignee == key {
-			cl = append(cl, c)
-		}
-	}
-	if len(cl) == 0 {
+
+	dataAccess.Lock()
+	err, cl := dataStore.ReadAll(KeyAssignee, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
 		http.Error(w, "Key not found", http.StatusNotFound)
 		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+
 	json.NewEncoder(w).Encode(cl)
 }
 
@@ -180,11 +213,19 @@ func getComputers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
-	if len(dataStore) == 0 {
+
+	dataAccess.Lock()
+	err, cl := dataStore.ReadAll(KeyAll, "")
+	dataAccess.Unlock()
+
+	if err == errNotFound {
 		http.Error(w, "No items found", http.StatusNotFound)
 		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-	json.NewEncoder(w).Encode(dataStore)
+
+	json.NewEncoder(w).Encode(cl)
 }
 
 func getUnassignedComputers(w http.ResponseWriter, r *http.Request) {
@@ -192,16 +233,18 @@ func getUnassignedComputers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
-	var cl []Computer
-	for _, c := range(dataStore) {
-		if c.Assignee == "" {
-			cl = append(cl, c)
-		}
-	}
-	if len(cl) == 0 {
+
+	dataAccess.Lock()
+	err, cl := dataStore.ReadAll(KeyNotAssigned, "")
+	dataAccess.Unlock()
+
+	if err == errNotFound {
 		http.Error(w, "No unassigned items", http.StatusNotFound)
 		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+
 	json.NewEncoder(w).Encode(cl)
 }
 
@@ -228,20 +271,26 @@ func assignComputerByMAC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "'assignee' field is restricted to 3-letter employee codes.", http.StatusBadRequest)
 		return // TODO: Reconsider limitation for future-proofing
 	}
-	for n, c := range(dataStore) {
-		if c.MAC == a.Key {
-			dataStore[n].Assignee = a.Assignee
-			if checkEmployee(a.Assignee) < 0 {
-				fmt.Printf("Error reporting over-assignement.")
-				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
-			} else {
-				w.WriteHeader(http.StatusOK)
-			}
-			return
-		}
+
+	dataAccess.Lock()
+	err = dataStore.Assign(KeyMAC, a.Key, a.Assignee)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Error items not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	http.Error(w, "Key not found", http.StatusNotFound)
+	if checkEmployee(a.Assignee) < 0 {
+		fmt.Printf("Error reporting over-assignement.")
+		http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func assignComputerByName(w http.ResponseWriter, r *http.Request) {
@@ -267,20 +316,26 @@ func assignComputerByName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "'assignee' field is restricted to 3-letter employee codes.", http.StatusBadRequest)
 		return // TODO: Reconsider limitation for future-proofing
 	}
-	for n, c := range(dataStore) {
-		if c.Name == a.Key {
-			dataStore[n].Assignee = a.Assignee
-			if checkEmployee(a.Assignee) < 0 {
-				fmt.Printf("Error reporting over-assignement.")
-				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
-			} else {
-				w.WriteHeader(http.StatusOK)
-			}
-			return
-		}
+
+	dataAccess.Lock()
+	err = dataStore.Assign(KeyName, a.Key, a.Assignee)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Error items not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	http.Error(w, "Key not found", http.StatusNotFound)
+	if checkEmployee(a.Assignee) < 0 {
+		fmt.Printf("Error reporting over-assignement.")
+		http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func assignComputerByIP(w http.ResponseWriter, r *http.Request) {
@@ -306,20 +361,26 @@ func assignComputerByIP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "'assignee' field is restricted to 3-letter employee codes.", http.StatusBadRequest)
 		return // TODO: Reconsider limitation for future-proofing
 	}
-	for n, c := range(dataStore) {
-		if c.IP == a.Key {
-			dataStore[n].Assignee = a.Assignee
-			if checkEmployee(a.Assignee) < 0 {
-				fmt.Printf("Error reporting over-assignement.")
-				http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
-			} else {
-				w.WriteHeader(http.StatusOK)
-			}
-			return
-		}
+
+	dataAccess.Lock()
+	err = dataStore.Assign(KeyIP, a.Key, a.Assignee)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Error items not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	http.Error(w, "Key not found", http.StatusNotFound)
+	if checkEmployee(a.Assignee) < 0 {
+		fmt.Printf("Error reporting over-assignement.")
+		http.Error(w, "Error reporting over-assignement", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func unassignComputerByMAC(w http.ResponseWriter, r *http.Request) {
@@ -328,14 +389,20 @@ func unassignComputerByMAC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("mac")
-	for n, c := range(dataStore) {
-		if c.MAC== key {
-			dataStore[n].Assignee = ""
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+
+	dataAccess.Lock()
+	err := dataStore.Unassign(KeyMAC, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func unassignComputerByName(w http.ResponseWriter, r *http.Request) {
@@ -344,14 +411,20 @@ func unassignComputerByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("name")
-	for n, c := range(dataStore) {
-		if c.Name == key {
-			dataStore[n].Assignee = ""
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+
+	dataAccess.Lock()
+	err := dataStore.Unassign(KeyName, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func unassignComputerByIP(w http.ResponseWriter, r *http.Request) {
@@ -360,14 +433,20 @@ func unassignComputerByIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("ip")
-	for n, c := range(dataStore) {
-		if c.IP == key {
-			dataStore[n].Assignee = ""
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+
+	dataAccess.Lock()
+	err := dataStore.Unassign(KeyName, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func deleteComputerByMAC(w http.ResponseWriter, r *http.Request) {
@@ -376,22 +455,20 @@ func deleteComputerByMAC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("mac")
-	if len(dataStore) > 0 {
-		if len(dataStore) == 1 && dataStore[0].MAC == key {
-			dataStore = nil
-		} else {
-			for n, c := range(dataStore) {
-				if c.MAC == key {
-					dataStore[n] = dataStore[len(dataStore)-1]
-					dataStore = dataStore[:len(dataStore)-1]
-					break
-				}
-			}
-		}
-		w.WriteHeader(http.StatusOK)
+
+	dataAccess.Lock()
+	err := dataStore.Delete(KeyMAC, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func deleteComputerByName(w http.ResponseWriter, r *http.Request) {
@@ -400,22 +477,19 @@ func deleteComputerByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("name")
-	if len(dataStore) > 0 {
-		if len(dataStore) == 1 && dataStore[0].Name == key {
-			dataStore = nil
-		} else {
-			for n, c := range(dataStore) {
-				if c.Name == key {
-					dataStore[n] = dataStore[len(dataStore)-1]
-					dataStore = dataStore[:len(dataStore)-1]
-					break
-				}
-			}
-		}
-		w.WriteHeader(http.StatusOK)
+
+	dataAccess.Lock()
+	err := dataStore.Delete(KeyName, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func deleteComputerByIP(w http.ResponseWriter, r *http.Request) {
@@ -424,25 +498,53 @@ func deleteComputerByIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.URL.Query().Get("ip")
-	if len(dataStore) > 0 {
-		if len(dataStore) == 1 {
-			dataStore = nil
-		} else {
-			for n, c := range(dataStore) {
-				if c.IP == key {
-					dataStore[n] = dataStore[len(dataStore)-1]
-					dataStore = dataStore[:len(dataStore)-1]
-					break
-				}
-			}
-		}
-		w.WriteHeader(http.StatusOK)
+
+	dataAccess.Lock()
+	err := dataStore.Delete(KeyIP, key)
+	dataAccess.Unlock()
+
+	if err == errNotFound {
+		http.Error(w, "Key not found", http.StatusNotFound)
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Error(w, "Key not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusOK)
 }
 
+var dataStore dataInterface
+
 func main() {
+	storagetype := flag.String("storage-type", "", "the type of storage to use ('volatile', 'json' or 'sqlite'")
+	file := flag.String("file", "", "Optional. The file to use as database")
+	flag.Parse()
+
+	if *storagetype == "" ||
+	   (*storagetype != "volatile" &&
+	    *storagetype != "json" &&
+	    *storagetype != "sqlite"){
+		fmt.Println("Usage: SampDB [--file=<file>] --storage-type=<volatile|json|sqlite>")
+		return
+	}
+
+	if *storagetype == "json" && *file == "" {
+		*file = "default.json"
+	} else if *storagetype == "sqlite" && *file == "" {
+		*file = "default.sqlite"
+	}
+
+	err := GetDataStore(*storagetype, *file, &dataStore)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing database: %s\n", err.Error())
+		return
+	}
+
+	if dataStore == nil {
+		fmt.Fprintf(os.Stderr, "Error initializing database.\n")
+		return
+	}
+
 	http.HandleFunc("/getComputerByMAC",		getComputerByMAC)
 	http.HandleFunc("/getComputerByName",		getComputerByName)
 	http.HandleFunc("/getComputerByIP",		getComputerByIP)
